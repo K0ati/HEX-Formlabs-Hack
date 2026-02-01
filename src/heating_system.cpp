@@ -1,6 +1,8 @@
-#include <Arduino.h>
+#ifdef MAIN_LOGIC
+
 #include "WeatherAPI.h"
 #include <TimeLib.h> 
+#include <Arduino.h>
 
 // pins
 const int M1 = 20;
@@ -19,9 +21,6 @@ const int stepThreshold = 2000;  // Threshold for rush hour
 const int HOURS_IN_DAY = 24;
 
 // sensor variables
-float snowProbability = 0.0;
-float temperatureC = 5.0;
-bool isRaining = false;
 bool isRushHour = false;
 
 float voltageA0 = 0.0;
@@ -34,7 +33,7 @@ int footSteps[HOURS_IN_DAY] = {
 
 // timing
 unsigned long lastUpdate = 0;
-const unsigned long UPDATE_INTERVAL = 10UL * 60UL * 1000UL; // 10 minutes
+const unsigned long UPDATE_INTERVAL = 20000; // 20 sec
 
 void setMOSFETs(bool m1, bool m2, bool m3, bool m4) {
   digitalWrite(M1, m1);
@@ -45,7 +44,9 @@ void setMOSFETs(bool m1, bool m2, bool m3, bool m4) {
 
 // Returns voltage on A0
 float readVoltageA0() {
-  int raw = analogRead(A0);             
+  int raw = analogRead(A0);      
+  Serial.print("Raw: ");  
+  Serial.println(raw);
   float voltage = (raw / 4095.0) * 3.3; 
   return voltage;
 }
@@ -57,26 +58,20 @@ void printVoltage() {
   Serial.println(" V");
 }
 
-
-bool checkRushHour() {
-  int currentHour = hour();  // (0-23)
-  
+// Check if rush hour based on current hour
+bool checkRushHour(int currentHour) {
   int stepsNow = footSteps[currentHour];
   Serial.print("Hour: "); Serial.print(currentHour);
   Serial.print(" | Steps: "); Serial.println(stepsNow);
 
-  if (stepsNow >= stepThreshold) {
-    return true;  // rush hour/lots of people walking
-  } else {
-    return false; // not rush hour
-  }
+  return stepsNow >= stepThreshold;
 }
 
 // logic to decide mode
 void decideMode() {
   bool snowOrIce =
     (snowProbability > SNOW_THRESHOLD) ||
-    (isRaining && temperatureC <= FREEZE_TEMP);
+    (rainLast12h && temperatureC <= FREEZE_TEMP); // recent rain + subfreezing
 
   bool isRushHour = checkRushHour();
 
@@ -94,7 +89,6 @@ void decideMode() {
 // apply mode
 void applyMode() {
   switch (currentMode) {
-
     case MODE_A:
       Serial.println("MODE A: Energy → Heating");
       setMOSFETs(HIGH, HIGH, LOW, LOW);
@@ -112,8 +106,30 @@ void applyMode() {
   }
 }
 
+void printModeDescription() {
+  switch (currentMode) {
+    case MODE_A:
+      Serial.println("MODE A");
+      Serial.println("Energy → Heating");
+      break;
+
+    case MODE_B:
+      Serial.println("MODE B");
+      Serial.println("Battery → Heating");
+      break;
+
+    case MODE_C:
+      Serial.println("MODE C");
+      Serial.println("Energy → Battery");
+      break;
+  }
+}
+
+
 void setup() {
   Serial.begin(115200);
+
+  setTime(12, 38, 0, 1, 2, 2026);  // 12:35:00, Feb 1, 2026
 
   pinMode(M1, OUTPUT);
   pinMode(M2, OUTPUT);
@@ -127,24 +143,71 @@ void setup() {
 
   initWeatherWiFi();
 
+  lastUpdate = millis() - UPDATE_INTERVAL;
+
 }
 
 void loop() {
-  if (millis() - lastUpdate > UPDATE_INTERVAL) {
+  
+  if (millis() - lastUpdate >= UPDATE_INTERVAL) {
     lastUpdate = millis();
 
     updateWeather();
-    isRushHour = checkRushHour();
 
-    decideMode();
+    // Get current time once
+    struct tm timeinfo;
+    if (getLocalTime(&timeinfo)) {
+        Serial.print("Time: ");
+        Serial.printf("%02d:%02d:%02d\n", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+        
+        // Rush hour based on current hour
+        isRushHour = checkRushHour(timeinfo.tm_hour);
+    } else {
+        Serial.println("Failed to obtain time");
+        isRushHour = false;
+    }
+
+    decideMode(isRushHour);
     applyMode();
 
     Serial.println("----- STATUS -----");
-    Serial.print("Snow %: "); Serial.println(snowProbability);
-    Serial.print("Temp C: "); Serial.println(temperatureC);
-    Serial.println("------------------");
+
+    Serial.print("City: "); Serial.println(CITY);
+
+    Serial.print("Country: "); Serial.println(COUNTRY);
+
+    // TIME
+    struct tm timeinfo;
+    if (getLocalTime(&timeinfo)) {
+        Serial.print("Time: ");
+        Serial.printf("%02d:%02d:%02d\n", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+    } else {
+        Serial.println("Failed to obtain time");
+    }
+
+    // WEATHER
+    Serial.println("\n[ WEATHER ]");
+    Serial.print("Snow: ");
+    Serial.print((int)snowProbability);
+    Serial.println("%");
+
+    Serial.print("Temp: ");
+    Serial.print(temperatureC);
+    Serial.println("°C");
+
+    Serial.print("Rain in last 12h: "); Serial.println(rainLast12h ? "Yes" : "No");
+
+
+    Serial.print("High traffic: "); Serial.println(isRushHour ? "YES" : "NO");
+
+    // MODE
+    Serial.println("\n[ SYSTEM MODE ]");
+    printModeDescription();
+    Serial.println("=================================\n");
 
     // test A0 voltage
     printVoltage();
   }
 }
+
+#endif
