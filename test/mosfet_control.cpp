@@ -1,3 +1,5 @@
+#include <Arduino.h>
+
 // MOSFET pins
 const int M1 = 4;
 const int M2 = 5;
@@ -5,8 +7,8 @@ const int M3 = 6;
 const int M4 = 7;
 
 // timing 
-unsigned long timer = 1000;
-unsigned long pause = 1000;
+unsigned long onTime = 1000;
+unsigned long offTime = 1000;
 
 // mode selection
 enum Mode { MODE_A, MODE_B, MODE_C };
@@ -21,8 +23,8 @@ void setMOSFETs(bool m1, bool m2, bool m3, bool m4) {
 
 void setup() {
   Serial.begin(115200);
-  delay(2000);
 
+  Serial.println("System starting...");
   pinMode(M1, OUTPUT);
   pinMode(M2, OUTPUT);
   pinMode(M3, OUTPUT);
@@ -51,21 +53,21 @@ void loop() {
     case MODE_A:
       Serial.println("MODE A: ON");
       setMOSFETs(HIGH, HIGH, LOW, LOW);
-      delay(timer);
+      delay(onTime);
 
       Serial.println("MODE A: OFF");
       setMOSFETs(HIGH, HIGH, HIGH, HIGH);
-      delay(pause);i 
+      delay(offTime); 
       break;
 
     case MODE_B:
       Serial.println("MODE B: ON");
       setMOSFETs(HIGH, LOW, HIGH, LOW);
-      delay(timer);
+      delay(onTime);
 
       Serial.println("MODE B: OFF");
       setMOSFETs(HIGH, HIGH, HIGH, HIGH);
-      delay(pause);
+      delay(offTime);
       break;
 
     case MODE_C:
